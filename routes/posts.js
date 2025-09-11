@@ -853,7 +853,7 @@ router.delete("/:id([0-9a-fA-F]{24})", auth, async (req, res) => {
     const post = await Post.findById(req.params.id);
 
     if (!post) return res.status(404).json({ error: "Post not found" });
-    if (post.author.toString() !== req.user.id) {
+    if (post.authorId.toString() !== req.user.id) {
       return res.status(403).json({ error: "Not authorized" });
     }
 
