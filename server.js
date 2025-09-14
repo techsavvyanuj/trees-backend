@@ -44,6 +44,7 @@ const io = new Server(server, {
     origin: [
       "https://treessocialmedia-ci5o.vercel.app",
       "https://treessocialmedia.vercel.app",
+      "https://trees-admin-lh9z.vercel.app",
       "http://localhost:5173",
       "http://localhost:8080",
       "http://localhost:8081",
@@ -71,6 +72,7 @@ const corsOptions = {
   origin: [
     "https://treessocialmedia-ci5o.vercel.app",
     "https://treessocialmedia-ci5o.vercel.app/",
+    "https://trees-admin-lh9z.vercel.app",
     "http://localhost:5173",
     "http://localhost:8080",
     "http://localhost:8081",
