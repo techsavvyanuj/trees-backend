@@ -3,7 +3,7 @@ import { auth, adminAuth } from "../middleware/auth.js";
 import Match from "../models/Match.js";
 import Message from "../models/Message.js";
 import User from "../models/User.js";
-import Report from "../models/Report.js";
+import Report from "../models/Reports.js";
 import Chat from "../models/Chat.js";
 
 const router = express.Router();

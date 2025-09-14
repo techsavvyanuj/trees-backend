@@ -6,7 +6,7 @@ import Reel from "../models/Reel.js";
 import Stream from "../models/Stream.js";
 import Match from "../models/Match.js";
 import Message from "../models/Message.js";
-import Report from "../models/Report.js";
+import Report from "../models/Reports.js";
 import Subscription from "../models/Subscription.js";
 
 const router = express.Router();

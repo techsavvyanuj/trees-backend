@@ -3,7 +3,7 @@ import { auth } from "../middleware/auth.js";
 import { uploadReel, cloudinaryUtils } from "../config/cloudinary.js";
 import User from "../models/User.js";
 import Reel from "../models/Reel.js";
-import Report from "../models/Report.js";
+import Report from "../models/Reports.js";
 import Notification from "../models/Notification.js";
 
 const router = express.Router();

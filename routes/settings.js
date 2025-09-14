@@ -7,7 +7,7 @@ import Post from "../models/Post.js";
 import Reel from "../models/Reel.js";
 import Chat from "../models/Chat.js";
 import Notification from "../models/Notification.js";
-import Report from "../models/Report.js";
+import Report from "../models/Reports.js";
 import UserReport from "../models/UserReport.js";
 import Match from "../models/Match.js";
 import UserInteraction from "../models/UserInteraction.js";
