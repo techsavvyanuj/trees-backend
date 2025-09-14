@@ -1,6 +1,6 @@
 import express from 'express';
 import { body, validationResult } from 'express-validator';
-import UserReport from '../models/UserReport.js';
+import Report from '../models/Report.js';
 import User from '../models/User.js';
 import { authenticateToken } from '../middleware/auth.js';
 
@@ -64,17 +64,19 @@ router.post('/', authenticateToken, [
       });
     }
 
-    // Create report
-    const report = new UserReport({
+    // Create report using new Report model
+    const report = new Report({
       reporter: req.user.id,
       reportedUser: reportedUserId,
       reportType,
       reason,
       evidence,
+      category: req.body.category || 'behavior',
+      severity: req.body.severity || 5,
       metadata: {
-        userAgent: req.get('User-Agent'),
-        ipAddress: req.ip,
-        location: req.get('X-Forwarded-For') || req.connection.remoteAddress
+        reporterIP: req.ip,
+        reporterUserAgent: req.get('User-Agent'),
+        // Add more metadata fields as needed
       }
     });
 
@@ -83,7 +85,7 @@ router.post('/', authenticateToken, [
     res.status(201).json({
       success: true,
       message: 'User reported successfully',
-      data: report.getReportSummary()
+      data: report
     });
   } catch (error) {
     console.error('Error reporting user:', error);
