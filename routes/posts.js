@@ -247,10 +247,19 @@ router.get("/feed", auth, async (req, res) => {
     }
 
     // Simple and effective query - show posts from followed users + own posts
-    // Include common types (post/image/video) and exclude stories
+    // Include common types (post/image/video/text) and exclude stories
+    // Also include PSA posts from system user
     const query = {
-      authorId: { $in: userIdsToShow },
-      type: { $in: ["post", "image", "video"] },
+      $or: [
+        {
+          authorId: { $in: userIdsToShow },
+          type: { $in: ["post", "image", "video", "text"] },
+        },
+        {
+          isPSA: true,
+          type: "text"
+        }
+      ]
     };
 
     console.log(`Feed query:`, JSON.stringify(query, null, 2));
@@ -320,11 +329,15 @@ router.get("/feed", auth, async (req, res) => {
           )
         : false;
 
+      // Handle PSA posts that may not have populated author
+      const author = post.authorId || {};
+      const isPSAPost = post.isPSA || false;
+
       return {
         id: post._id.toString(),
-        authorId: post.authorId._id.toString(),
-        authorName: post.authorId.name || post.authorId.username,
-        authorAvatar: post.authorId.profileImage || null,
+        authorId: author._id?.toString() || post.authorId?.toString() || "system",
+        authorName: isPSAPost ? "Trees" : (author.name || author.username || "Unknown"),
+        authorAvatar: isPSAPost ? null : (author.profileImage || null),
         content: post.content || "",
         image,
         images: image ? [image] : [],
@@ -338,12 +351,13 @@ router.get("/feed", auth, async (req, res) => {
         isLiked: !!liked,
         isBookmarked: !!bookmarked,
         type: post.type || "post",
+        isPSA: isPSAPost,
         user: {
-          _id: post.authorId._id,
-          name: post.authorId.name || post.authorId.username,
-          username: post.authorId.username,
-          avatar: post.authorId.profileImage,
-          verified: post.authorId.isVerified || false,
+          _id: author._id || post.authorId || "system",
+          name: isPSAPost ? "Trees" : (author.name || author.username || "Unknown"),
+          username: isPSAPost ? "trees" : (author.username || "unknown"),
+          avatar: isPSAPost ? null : (author.profileImage || null),
+          verified: isPSAPost ? true : (author.isVerified || false),
         },
         createdAt: post.createdAt,
         views: post.views || 0,

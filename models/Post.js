@@ -256,6 +256,24 @@ const postSchema = new mongoose.Schema(
         default: "#000000",
       },
     },
+    // PSA (Public Service Announcement) fields
+    isPSA: {
+      type: Boolean,
+      default: false,
+    },
+    psaId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "PSA",
+    },
+    metadata: {
+      isSystemPost: {
+        type: Boolean,
+        default: false,
+      },
+      systemAuthor: {
+        type: String, // "trees" or other system identifier
+      },
+    },
   },
   {
     timestamps: true,

@@ -93,6 +93,11 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    badges: {
+      type: [String],
+      default: [],
+      enum: ['Verified', 'Top Creator', 'Moderator', 'Early Adopter', 'Premium Member', 'Community Helper', 'Content Creator', 'Influencer']
+    },
     isBlocked: {
       type: Boolean,
       default: false,
@@ -284,6 +289,30 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    banReason: {
+      type: String,
+      maxlength: [500, "Ban reason cannot be more than 500 characters"],
+    },
+    bannedAt: {
+      type: Date,
+    },
+    banEndDate: {
+      type: Date, // null for permanent ban
+    },
+    banHistory: [{
+      reason: String,
+      duration: Number, // days, null for permanent
+      bannedAt: Date,
+      bannedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      unbannedAt: Date,
+      unbannedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      }
+    }],
     deactivatedAt: Date,
     deletedAt: Date,
     stats: {
