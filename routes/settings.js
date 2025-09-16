@@ -8,7 +8,7 @@ import Reel from "../models/Reel.js";
 import Chat from "../models/Chat.js";
 import Notification from "../models/Notification.js";
 import Report from "../models/Reports.js";
-import UserReport from "../models/UserReport.js";
+import ContentReport from "../models/ContentReport.js";
 import Match from "../models/Match.js";
 import UserInteraction from "../models/UserInteraction.js";
 import { cloudinaryUtils } from "../config/cloudinary.js";
@@ -474,11 +474,11 @@ router.delete("/account", authenticateToken, async (req, res) => {
       }),
       // Admin/simple reports model
       Report.deleteMany({
-        $or: [{ reporterId: userId }, { reportedUserId: userId }],
-      }),
-      // Detailed user reports model
-      UserReport.deleteMany({
         $or: [{ reporter: userId }, { reportedUser: userId }],
+      }),
+      // Content reports model
+      ContentReport.deleteMany({
+        $or: [{ reporter: userId }],
       }),
       // Matches involving this user
       Match.deleteMany({
