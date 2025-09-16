@@ -56,7 +56,10 @@ router.post('/', authenticateToken, [
     }
 
     // Check if user has already reported this user
-    const hasReported = await UserReport.hasUserReported(req.user.id, reportedUserId);
+    const hasReported = await Report.findOne({ 
+      reporter: req.user.id, 
+      reportedUser: reportedUserId 
+    });
     if (hasReported) {
       return res.status(400).json({
         success: false,
@@ -107,13 +110,13 @@ router.get('/my-reports', authenticateToken, async (req, res) => {
       query.status = status;
     }
 
-    const reports = await UserReport.find(query)
+    const reports = await Report.find(query)
       .populate('reportedUser', 'fullName username profileImage')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
 
-    const total = await UserReport.countDocuments(query);
+    const total = await Report.countDocuments(query);
 
     res.json({
       success: true,
@@ -155,14 +158,14 @@ router.get('/against/:userId', authenticateToken, async (req, res) => {
       query.status = status;
     }
 
-    const reports = await UserReport.find(query)
+    const reports = await Report.find(query)
       .populate('reporter', 'fullName username profileImage')
       .populate('reportedUser', 'fullName username profileImage')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
 
-    const total = await UserReport.countDocuments(query);
+    const total = await Report.countDocuments(query);
 
     res.json({
       success: true,
@@ -203,14 +206,14 @@ router.get('/all', authenticateToken, async (req, res) => {
     if (type) query.reportType = type;
     if (priority) query.priority = priority;
 
-    const reports = await UserReport.find(query)
+    const reports = await Report.find(query)
       .populate('reporter', 'fullName username profileImage')
       .populate('reportedUser', 'fullName username profileImage')
       .sort({ priority: -1, createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
 
-    const total = await UserReport.countDocuments(query);
+    const total = await Report.countDocuments(query);
 
     res.json({
       success: true,
@@ -245,7 +248,17 @@ router.get('/high-priority', authenticateToken, async (req, res) => {
       });
     }
 
-    const reports = await UserReport.getHighPriorityReports(parseInt(limit));
+    const reports = await Report.find({ 
+      $or: [
+        { priority: 'high' },
+        { priority: 'urgent' },
+        { severity: { $gte: 8 } }
+      ]
+    })
+      .populate('reporter', 'username email')
+      .populate('reportedUser', 'username email')
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit));
 
     res.json({
       success: true,
@@ -287,7 +300,7 @@ router.put('/:reportId/status', authenticateToken, [
       });
     }
 
-    const report = await UserReport.findById(reportId);
+    const report = await Report.findById(reportId);
     if (!report) {
       return res.status(404).json({
         success: false,
@@ -345,7 +358,7 @@ router.put('/:reportId/action', authenticateToken, [
       });
     }
 
-    const report = await UserReport.findById(reportId);
+    const report = await Report.findById(reportId);
     if (!report) {
       return res.status(404).json({
         success: false,
@@ -391,7 +404,7 @@ router.get('/stats', authenticateToken, async (req, res) => {
       });
     }
 
-    const stats = await UserReport.aggregate([
+    const stats = await Report.aggregate([
       {
         $group: {
           _id: '$status',
@@ -400,7 +413,7 @@ router.get('/stats', authenticateToken, async (req, res) => {
       }
     ]);
 
-    const typeStats = await UserReport.aggregate([
+    const typeStats = await Report.aggregate([
       {
         $group: {
           _id: '$reportType',
@@ -409,7 +422,7 @@ router.get('/stats', authenticateToken, async (req, res) => {
       }
     ]);
 
-    const priorityStats = await UserReport.aggregate([
+    const priorityStats = await Report.aggregate([
       {
         $group: {
           _id: '$priority',
@@ -418,9 +431,9 @@ router.get('/stats', authenticateToken, async (req, res) => {
       }
     ]);
 
-    const totalReports = await UserReport.countDocuments();
-    const pendingReports = await UserReport.countDocuments({ status: 'pending' });
-    const highPriorityReports = await UserReport.countDocuments({ 
+    const totalReports = await Report.countDocuments();
+    const pendingReports = await Report.countDocuments({ status: 'pending' });
+    const highPriorityReports = await Report.countDocuments({ 
       priority: { $in: ['high', 'urgent'] },
       status: { $in: ['pending', 'investigating'] }
     });
@@ -450,7 +463,7 @@ router.get('/:reportId', authenticateToken, async (req, res) => {
   try {
     const { reportId } = req.params;
 
-    const report = await UserReport.findById(reportId)
+    const report = await Report.findById(reportId)
       .populate('reporter', 'fullName username profileImage')
       .populate('reportedUser', 'fullName username profileImage')
       .populate('adminNotes.admin', 'fullName username');

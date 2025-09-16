@@ -368,6 +368,7 @@ router.post('/debug/create-test-report', async (req, res) => {
     });
 
     await testReport.save();
+    console.log('Test report created:', testReport);
     
     res.json({
       success: true,
@@ -375,6 +376,7 @@ router.post('/debug/create-test-report', async (req, res) => {
       message: 'Test report created successfully'
     });
   } catch (error) {
+    console.error('Error creating test report:', error);
     res.status(500).json({ error: error.message });
   }
 });
