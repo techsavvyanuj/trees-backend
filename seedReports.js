@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import User from './models/User.js';
-import Report from './models/Report.js';
+import Report from './models/Reports.js';
 
 dotenv.config();
 

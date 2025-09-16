@@ -327,6 +327,58 @@ router.delete('/users/:id', async (req, res) => {
 // CONTENT MODERATION ENDPOINTS
 // =============================================================================
 
+// Debug endpoint to check database collections and reports
+router.get('/debug/collections', async (req, res) => {
+  try {
+    const collections = await mongoose.connection.db.listCollections().toArray();
+    const collectionNames = collections.map(c => c.name);
+    
+    // Check for different possible report collections
+    const reportsInReports = await mongoose.connection.db.collection('reports').countDocuments();
+    const reportsInUserReports = await mongoose.connection.db.collection('userreports').countDocuments();
+    
+    res.json({
+      collections: collectionNames,
+      reportCounts: {
+        reports: reportsInReports,
+        userreports: reportsInUserReports
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create test report for debugging
+router.post('/debug/create-test-report', async (req, res) => {
+  try {
+    // Get first two users
+    const users = await User.find().limit(2);
+    if (users.length < 2) {
+      return res.status(400).json({ error: 'Need at least 2 users in database' });
+    }
+
+    const testReport = new Report({
+      reporter: users[0]._id,
+      reportedUser: users[1]._id,
+      reportType: 'spam',
+      reason: 'Test report created from admin panel for debugging',
+      category: 'behavior',
+      severity: 3
+    });
+
+    await testReport.save();
+    
+    res.json({
+      success: true,
+      report: testReport,
+      message: 'Test report created successfully'
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get reported content for moderation
 router.get('/moderation/reports', async (req, res) => {
   try {
@@ -346,35 +398,44 @@ router.get('/moderation/reports', async (req, res) => {
       ];
     }
 
+    console.log('Fetching reports with filter:', filter);
+    
+    // First check total count in Report collection
+    const totalInDb = await Report.countDocuments();
+    console.log('Total reports in database:', totalInDb);
+    
     const reports = await Report.find(filter)
-      .populate('reporterId', 'username name email profilePicture')
-      .populate('reportedUserId', 'username name email profilePicture')
+      .populate('reporter', 'username name email profilePicture')
+      .populate('reportedUser', 'username name email profilePicture')
       .populate('assignedTo', 'username name')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
 
+    console.log('Found reports after query:', reports.length);
+
     const total = await Report.countDocuments(filter);
+    console.log('Total matching filter:', total);
 
     // Format reports with mock content data (since we don't have Post model integrated)
     const formattedReports = reports.map(report => ({
       _id: report._id,
-      reporter: report.reporterId ? {
-        _id: report.reporterId._id,
-        username: report.reporterId.username,
-        name: report.reporterId.name,
-        profilePicture: report.reporterId.profilePicture
+      reporter: report.reporter ? {
+        _id: report.reporter._id,
+        username: report.reporter.username,
+        name: report.reporter.name,
+        profilePicture: report.reporter.profilePicture
       } : {
         _id: 'deleted',
         username: '[Deleted User]',
         name: '[Deleted User]',
         profilePicture: null
       },
-      reportedUser: report.reportedUserId ? {
-        _id: report.reportedUserId._id,
-        username: report.reportedUserId.username,
-        name: report.reportedUserId.name,
-        profilePicture: report.reportedUserId.profilePicture
+      reportedUser: report.reportedUser ? {
+        _id: report.reportedUser._id,
+        username: report.reportedUser.username,
+        name: report.reportedUser.name,
+        profilePicture: report.reportedUser.profilePicture
       } : {
         _id: 'deleted',
         username: '[Deleted User]',
