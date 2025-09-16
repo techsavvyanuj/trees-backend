@@ -72,6 +72,7 @@ const limiter = rateLimit({
 const corsOptions = {
   origin: [
     "https://treessocialmedia-ci5o.vercel.app",
+    "https://treessocialmedia.vercel.app",
     "https://treessocialmedia-ci5o.vercel.app/",
     "https://trees-admin-lh9z.vercel.app",
     "http://localhost:5173",
