@@ -7,6 +7,7 @@ import Reel from '../models/Reel.js';
 import Stream from '../models/Stream.js';
 import Match from '../models/Match.js';
 import Report from '../models/Reports.js';
+import ContentReport from '../models/ContentReport.js';
 import Notification from '../models/Notification.js';
 import AdminLog from '../models/AdminLog.js';
 
@@ -336,12 +337,14 @@ router.get('/debug/collections', async (req, res) => {
     // Check for different possible report collections
     const reportsInReports = await mongoose.connection.db.collection('reports').countDocuments();
     const reportsInUserReports = await mongoose.connection.db.collection('userreports').countDocuments();
+    const reportsInContentReports = await mongoose.connection.db.collection('contentreports').countDocuments();
     
     res.json({
       collections: collectionNames,
       reportCounts: {
         reports: reportsInReports,
-        userreports: reportsInUserReports
+        userreports: reportsInUserReports,
+        contentreports: reportsInContentReports
       }
     });
   } catch (error) {
@@ -392,34 +395,41 @@ router.get('/moderation/reports', async (req, res) => {
     
     const filter = {};
     if (status && status !== 'all') filter.status = status;
-    if (type && type !== 'all') filter.reportType = type;
+    if (type && type !== 'all') filter.targetType = type;
     if (search) {
       filter.$or = [
         { reason: { $regex: search, $options: 'i' } },
-        { evidence: { $regex: search, $options: 'i' } }
+        { additionalInfo: { $regex: search, $options: 'i' } }
       ];
     }
 
-    console.log('Fetching reports with filter:', filter);
+    console.log('Fetching content reports with filter:', filter);
     
-    // First check total count in Report collection
-    const totalInDb = await Report.countDocuments();
-    console.log('Total reports in database:', totalInDb);
+    // First check total count in ContentReport collection
+    const totalInDb = await ContentReport.countDocuments();
+    console.log('Total content reports in database:', totalInDb);
     
-    const reports = await Report.find(filter)
+    const reports = await ContentReport.find(filter)
       .populate('reporter', 'username name email profilePicture')
-      .populate('reportedUser', 'username name email profilePicture')
+      .populate({
+        path: 'targetId',
+        select: 'content mediaUrls text createdAt author',
+        populate: {
+          path: 'author',
+          select: 'username name profilePicture'
+        }
+      })
       .populate('assignedTo', 'username name')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
 
-    console.log('Found reports after query:', reports.length);
+    console.log('Found content reports after query:', reports.length);
 
-    const total = await Report.countDocuments(filter);
+    const total = await ContentReport.countDocuments(filter);
     console.log('Total matching filter:', total);
 
-    // Format reports with mock content data (since we don't have Post model integrated)
+    // Format reports for admin panel
     const formattedReports = reports.map(report => ({
       _id: report._id,
       reporter: report.reporter ? {
@@ -433,26 +443,26 @@ router.get('/moderation/reports', async (req, res) => {
         name: '[Deleted User]',
         profilePicture: null
       },
-      reportedUser: report.reportedUser ? {
-        _id: report.reportedUser._id,
-        username: report.reportedUser.username,
-        name: report.reportedUser.name,
-        profilePicture: report.reportedUser.profilePicture
+      reportedUser: report.targetId?.author ? {
+        _id: report.targetId.author._id,
+        username: report.targetId.author.username,
+        name: report.targetId.author.name,
+        profilePicture: report.targetId.author.profilePicture
       } : {
-        _id: 'deleted',
-        username: '[Deleted User]',
-        name: '[Deleted User]',
+        _id: 'unknown',
+        username: '[Content Author]',
+        name: '[Content Author]',
         profilePicture: null
       },
       content: {
-        type: 'post', // Default to post, can be enhanced
-        text: `This is some controversial content that might violate guidelines...`,
-        media: null,
-        createdAt: report.createdAt
+        type: report.targetType,
+        text: report.targetId?.content || report.targetId?.text || 'Content not available',
+        media: report.targetId?.mediaUrls || null,
+        createdAt: report.targetId?.createdAt || report.createdAt
       },
       reportType: report.reportType,
       reason: report.reason,
-      evidence: report.evidence,
+      evidence: report.additionalInfo || '',
       status: report.status,
       priority: report.priority,
       assignedTo: report.assignedTo,
@@ -460,7 +470,7 @@ router.get('/moderation/reports', async (req, res) => {
       actionsTaken: report.actionsTaken,
       createdAt: report.createdAt,
       updatedAt: report.updatedAt,
-      reportCount: 1 // Single report for now
+      reportCount: 1
     }));
 
     res.json({

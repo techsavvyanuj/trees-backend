@@ -1,103 +1,184 @@
 import express from 'express';
 import { body, validationResult } from 'express-validator';
 import Report from '../models/Reports.js';
+import ContentReport from '../models/ContentReport.js';
 import User from '../models/User.js';
+import Post from '../models/Post.js';
 import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Report a user
-router.post('/', authenticateToken, [
-  body('reportedUserId').isMongoId(),
-  body('reportType').isIn([
-    'inappropriate_behavior',
-    'harassment',
-    'fake_profile',
-    'spam',
-    'underage',
-    'violence',
-    'hate_speech',
-    'sexual_content',
-    'other'
-  ]),
-  body('reason').isString().trim().isLength({ min: 10, max: 1000 }),
-  body('evidence').optional().isArray(),
-  body('evidence.*.type').optional().isIn(['screenshot', 'message', 'profile', 'other']),
-  body('evidence.*.description').optional().isString().trim(),
-  body('evidence.*.url').optional().isURL()
-], async (req, res) => {
+// Universal report endpoint - handles both user and content reports
+router.post('/', authenticateToken, async (req, res) => {
   try {
-    const { reportedUserId, reportType, reason, evidence = [] } = req.body;
-
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
+    console.log('Report submission received:', req.body);
+    
+    // Check if it's a content report (has type and targetId) or user report (has reportedUserId)
+    if (req.body.type && req.body.targetId) {
+      // Handle content report
+      return await handleContentReport(req, res);
+    } else if (req.body.reportedUserId) {
+      // Handle user report
+      return await handleUserReport(req, res);
+    } else {
       return res.status(400).json({
         success: false,
-        message: 'Validation failed',
-        errors: errors.array()
+        message: 'Invalid report format. Must include either (type + targetId) for content reports or reportedUserId for user reports.'
       });
     }
-
-    // Check if user is reporting themselves
-    if (reportedUserId === req.user.id) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot report yourself'
-      });
-    }
-
-    // Check if reported user exists
-    const reportedUser = await User.findById(reportedUserId);
-    if (!reportedUser) {
-      return res.status(404).json({
-        success: false,
-        message: 'Reported user not found'
-      });
-    }
-
-    // Check if user has already reported this user
-    const hasReported = await Report.findOne({ 
-      reporter: req.user.id, 
-      reportedUser: reportedUserId 
-    });
-    if (hasReported) {
-      return res.status(400).json({
-        success: false,
-        message: 'You have already reported this user'
-      });
-    }
-
-    // Create report using new Report model
-    const report = new Report({
-      reporter: req.user.id,
-      reportedUser: reportedUserId,
-      reportType,
-      reason,
-      evidence,
-      category: req.body.category || 'behavior',
-      severity: req.body.severity || 5,
-      metadata: {
-        reporterIP: req.ip,
-        reporterUserAgent: req.get('User-Agent'),
-        // Add more metadata fields as needed
-      }
-    });
-
-    await report.save();
-
-    res.status(201).json({
-      success: true,
-      message: 'User reported successfully',
-      data: report
-    });
   } catch (error) {
-    console.error('Error reporting user:', error);
+    console.error('Error in report endpoint:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to report user'
+      message: 'Internal server error',
+      error: error.message
     });
   }
 });
+
+// Handle content reports (posts, reels, stories, etc.)
+async function handleContentReport(req, res) {
+  const { type, targetId, reason, additionalInfo, severity = 'medium' } = req.body;
+  
+  console.log('Processing content report:', { type, targetId, reason, additionalInfo, severity });
+
+  // Validate content report
+  if (!type || !targetId || !reason) {
+    return res.status(400).json({
+      success: false,
+      message: 'Content reports require type, targetId, and reason'
+    });
+  }
+
+  // Check if content exists
+  let targetExists = false;
+  if (type === 'post') {
+    targetExists = await Post.findById(targetId);
+  }
+  // Add checks for other content types as needed
+
+  if (!targetExists) {
+    console.log('Content not found:', targetId);
+    return res.status(404).json({
+      success: false,
+      message: 'Content not found'
+    });
+  }
+
+  // Check if user has already reported this content
+  const existingReport = await ContentReport.findOne({
+    reporter: req.user.id,
+    targetType: type,
+    targetId: targetId
+  });
+
+  if (existingReport) {
+    return res.status(400).json({
+      success: false,
+      message: 'You have already reported this content'
+    });
+  }
+
+  // Create content report
+  const report = new ContentReport({
+    reporter: req.user.id,
+    targetType: type,
+    targetId: targetId,
+    reportType: reason.toLowerCase().replace(/\s+/g, '_'), // Convert "Inappropriate content" to "inappropriate_content"
+    reason: additionalInfo || reason,
+    additionalInfo: additionalInfo,
+    severity: severity,
+    metadata: {
+      reporterIP: req.ip,
+      reporterUserAgent: req.get('User-Agent'),
+      timestamp: new Date()
+    }
+  });
+
+  await report.save();
+
+  console.log('Content report created successfully:', {
+    reportId: report._id,
+    reporter: req.user.id,
+    targetType: type,
+    targetId: targetId,
+    reason: reason
+  });
+
+  return res.status(201).json({
+    success: true,
+    message: 'Content reported successfully',
+    data: {
+      reportId: report._id,
+      status: report.status
+    }
+  });
+}
+
+// Handle user reports (existing functionality)
+async function handleUserReport(req, res) {
+  const { reportedUserId, reportType, reason, evidence = [] } = req.body;
+
+  // Validate required fields
+  if (!reportedUserId || !reportType || !reason) {
+    return res.status(400).json({
+      success: false,
+      message: 'User reports require reportedUserId, reportType, and reason'
+    });
+  }
+
+  // Check if user is reporting themselves
+  if (reportedUserId === req.user.id) {
+    return res.status(400).json({
+      success: false,
+      message: 'Cannot report yourself'
+    });
+  }
+
+  // Check if reported user exists
+  const reportedUser = await User.findById(reportedUserId);
+  if (!reportedUser) {
+    return res.status(404).json({
+      success: false,
+      message: 'Reported user not found'
+    });
+  }
+
+  // Check if user has already reported this user
+  const hasReported = await Report.findOne({ 
+    reporter: req.user.id, 
+    reportedUser: reportedUserId 
+  });
+  if (hasReported) {
+    return res.status(400).json({
+      success: false,
+      message: 'You have already reported this user'
+    });
+  }
+
+  // Create report using new Report model
+  const report = new Report({
+    reporter: req.user.id,
+    reportedUser: reportedUserId,
+    reportType,
+    reason,
+    evidence,
+    category: req.body.category || 'behavior',
+    severity: req.body.severity || 5,
+    metadata: {
+      reporterIP: req.ip,
+      reporterUserAgent: req.get('User-Agent'),
+    }
+  });
+
+  await report.save();
+
+  return res.status(201).json({
+    success: true,
+    message: 'User reported successfully',
+    data: report
+  });
+}
 
 // Get user's report history
 router.get('/my-reports', authenticateToken, async (req, res) => {
