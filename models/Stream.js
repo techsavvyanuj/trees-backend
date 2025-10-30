@@ -51,6 +51,14 @@ const streamSchema = new mongoose.Schema({
     type: String,
     maxlength: [500, 'Stream URL cannot be more than 500 characters']
   },
+  videoSdkRoomId: {
+    type: String,
+    maxlength: [100, 'VideoSDK Room ID cannot be more than 100 characters']
+  },
+  isRecording: {
+    type: Boolean,
+    default: false
+  },
   thumbnail: {
     type: String,
     maxlength: [500, 'Thumbnail URL cannot be more than 500 characters']

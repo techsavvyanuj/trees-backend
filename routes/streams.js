@@ -2,6 +2,15 @@ import express from 'express';
 import { auth } from '../middleware/auth.js';
 import Stream from '../models/Stream.js';
 import User from '../models/User.js';
+import {
+  generateVideoSDKToken,
+  createMeeting,
+  validateMeeting,
+  endMeeting,
+  getMeetingDetails,
+  startRecording,
+  stopRecording,
+} from '../config/videosdk.js';
 
 const router = express.Router();
 
@@ -89,39 +98,103 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
+// Generate VideoSDK token
+router.get('/token', auth, async (req, res) => {
+  try {
+    const token = generateVideoSDKToken({
+      permissions: ['allow_join', 'allow_mod'],
+      roles: ['CRAWLER', 'RTMP'],
+    });
+    
+    res.json({
+      success: true,
+      token,
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
+
 // Start stream
 router.post('/start', auth, async (req, res) => {
   try {
     const { title, description, category, thumbnail } = req.body;
     
+    // Validate required fields
+    if (!title) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Stream title is required' 
+      });
+    }
+    
     // Check if user already has an active stream
     const existingStream = await Stream.findOne({
-      streamer: req.user.id,
-      isLive: true
+      streamerId: req.user.id,
+      status: 'live'
     });
     
     if (existingStream) {
-      return res.status(400).json({ error: 'You already have an active stream' });
+      return res.status(400).json({ 
+        success: false,
+        error: 'You already have an active stream' 
+      });
     }
     
+    // Create VideoSDK meeting room
+    const meetingResult = await createMeeting();
+    
+    if (!meetingResult.success) {
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to create stream room'
+      });
+    }
+    
+    // Generate unique stream key
+    const streamKey = `stream_${req.user.id}_${Date.now()}`;
+    
     const stream = new Stream({
-      streamer: req.user.id,
-      title,
-      description,
-      category,
-      thumbnail,
-      isLive: true,
-      startedAt: new Date()
+      streamerId: req.user.id,
+      title: title,
+      description: description || '',
+      category: category || 'other',
+      thumbnail: thumbnail || '',
+      status: 'live',
+      startedAt: new Date(),
+      streamKey: streamKey,
+      streamUrl: meetingResult.roomId,
+      // Store VideoSDK room ID
+      videoSdkRoomId: meetingResult.roomId,
     });
     
     await stream.save();
     
-    const populatedStream = await Stream.findById(stream._id)
-      .populate('streamer', 'username profileImage isVerified');
+    // Update user's streamer profile
+    await User.findByIdAndUpdate(req.user.id, {
+      'streamerProfile.isLive': true,
+      'streamerProfile.currentStreamId': stream._id,
+      'streamerProfile.totalStreams': { $inc: 1 },
+    });
     
-    res.status(201).json(populatedStream);
+    const populatedStream = await Stream.findById(stream._id)
+      .populate('streamerId', 'username name avatar isVerified');
+    
+    res.status(201).json({
+      success: true,
+      stream: populatedStream,
+      roomId: meetingResult.roomId,
+      token: generateVideoSDKToken(),
+    });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Start stream error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
   }
 });
 
@@ -131,23 +204,51 @@ router.post('/:id/end', auth, async (req, res) => {
     const stream = await Stream.findById(req.params.id);
     
     if (!stream) {
-      return res.status(404).json({ error: 'Stream not found' });
+      return res.status(404).json({ 
+        success: false,
+        error: 'Stream not found' 
+      });
     }
     
-    if (stream.streamer.toString() !== req.user.id) {
-      return res.status(403).json({ error: 'Not authorized' });
+    if (stream.streamerId.toString() !== req.user.id) {
+      return res.status(403).json({ 
+        success: false,
+        error: 'Not authorized' 
+      });
     }
     
-    stream.isLive = false;
+    // End VideoSDK meeting
+    if (stream.videoSdkRoomId) {
+      await endMeeting(stream.videoSdkRoomId);
+    }
+    
+    stream.status = 'ended';
     stream.endedAt = new Date();
     stream.duration = Math.floor((stream.endedAt - stream.startedAt) / 1000);
-    stream.viewers = [];
     
     await stream.save();
     
-    res.json({ message: 'Stream ended successfully' });
+    // Update user's streamer profile
+    await User.findByIdAndUpdate(req.user.id, {
+      'streamerProfile.isLive': false,
+      'streamerProfile.currentStreamId': null,
+      $inc: {
+        'streamerProfile.totalViews': stream.totalViews,
+      },
+    });
+    
+    res.json({ 
+      success: true,
+      message: 'Stream ended successfully',
+      duration: stream.duration,
+      totalViews: stream.totalViews,
+    });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('End stream error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
   }
 });
 
@@ -206,6 +307,186 @@ router.post('/:id/react', auth, async (req, res) => {
     res.json({ message: 'Reaction added successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Join stream - Get stream details and token
+router.get('/:id/join', auth, async (req, res) => {
+  try {
+    const stream = await Stream.findById(req.params.id)
+      .populate('streamerId', 'username name avatar isVerified');
+    
+    if (!stream) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Stream not found' 
+      });
+    }
+    
+    if (stream.status !== 'live') {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Stream is not live' 
+      });
+    }
+    
+    // Generate token for viewer
+    const token = generateVideoSDKToken({
+      permissions: ['allow_join'],
+    });
+    
+    // Add viewer if not already viewing
+    const viewerIndex = stream.viewers.findIndex(
+      v => v.userId && v.userId.toString() === req.user.id
+    );
+    
+    if (viewerIndex === -1) {
+      stream.viewers.push({
+        userId: req.user.id,
+        joinedAt: new Date(),
+      });
+      stream.totalViews += 1;
+      stream.currentViewers = stream.viewers.filter(v => !v.leftAt).length;
+      
+      if (stream.currentViewers > stream.peakViewers) {
+        stream.peakViewers = stream.currentViewers;
+      }
+      
+      await stream.save();
+    }
+    
+    res.json({
+      success: true,
+      stream,
+      roomId: stream.videoSdkRoomId,
+      token,
+    });
+  } catch (error) {
+    console.error('Join stream error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
+
+// Leave stream
+router.post('/:id/leave', auth, async (req, res) => {
+  try {
+    const stream = await Stream.findById(req.params.id);
+    
+    if (!stream) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Stream not found' 
+      });
+    }
+    
+    // Update viewer's left time
+    const viewer = stream.viewers.find(
+      v => v.userId && v.userId.toString() === req.user.id && !v.leftAt
+    );
+    
+    if (viewer) {
+      viewer.leftAt = new Date();
+      viewer.watchTime = Math.floor((viewer.leftAt - viewer.joinedAt) / 1000);
+      stream.currentViewers = stream.viewers.filter(v => !v.leftAt).length;
+      await stream.save();
+    }
+    
+    res.json({
+      success: true,
+      message: 'Left stream successfully',
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
+
+// Start recording
+router.post('/:id/recording/start', auth, async (req, res) => {
+  try {
+    const stream = await Stream.findById(req.params.id);
+    
+    if (!stream) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Stream not found' 
+      });
+    }
+    
+    if (stream.streamerId.toString() !== req.user.id) {
+      return res.status(403).json({ 
+        success: false,
+        error: 'Not authorized' 
+      });
+    }
+    
+    if (!stream.videoSdkRoomId) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Invalid stream room' 
+      });
+    }
+    
+    const result = await startRecording(stream.videoSdkRoomId, req.body);
+    
+    if (result.success) {
+      stream.isRecording = true;
+      await stream.save();
+    }
+    
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
+
+// Stop recording
+router.post('/:id/recording/stop', auth, async (req, res) => {
+  try {
+    const stream = await Stream.findById(req.params.id);
+    
+    if (!stream) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Stream not found' 
+      });
+    }
+    
+    if (stream.streamerId.toString() !== req.user.id) {
+      return res.status(403).json({ 
+        success: false,
+        error: 'Not authorized' 
+      });
+    }
+    
+    if (!stream.videoSdkRoomId) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Invalid stream room' 
+      });
+    }
+    
+    const result = await stopRecording(stream.videoSdkRoomId);
+    
+    if (result.success) {
+      stream.isRecording = false;
+      await stream.save();
+    }
+    
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
   }
 });
 
