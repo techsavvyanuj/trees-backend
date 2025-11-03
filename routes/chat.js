@@ -65,10 +65,23 @@ const canInitiateOrMessage = async (senderId, recipientId) => {
 // Get user's chats
 router.get("/", authenticateToken, async (req, res) => {
   try {
-    const { limit = 20, page = 1 } = req.query;
+    const { limit = 20, page = 1, chatType } = req.query;
     const skip = (page - 1) * limit;
 
-    const chats = await Chat.getUserChats(req.user.id, parseInt(limit) + skip);
+    console.log('📩 GET /api/chat -', { chatType, userId: req.user.id });
+
+    // Get all chats for the user
+    const allChats = await Chat.getUserChats(req.user.id, parseInt(limit) + skip);
+    
+    console.log(`   Found ${allChats.length} total chats`);
+    
+    // Filter by chatType if specified
+    let chats = allChats;
+    if (chatType && ["arcade", "trees"].includes(chatType)) {
+      chats = allChats.filter(chat => chat.chatType === chatType);
+      console.log(`   Filtered to ${chats.length} ${chatType} chats`);
+    }
+    
     const paginatedChats = chats.slice(skip, skip + parseInt(limit));
 
     res.json({
@@ -183,12 +196,18 @@ router.post(
       const chat = new Chat({
         participants: [req.user.id, targetUserId],
         matchId: matchId,
+        chatType: "arcade", // Mark as arcade chat
       });
 
-      // Get chat with messages
-      // Add participants
-      await chat.addParticipant(req.user.id);
-      await chat.addParticipant(targetUserId);
+      // Generate PIN
+      chat.generatePin();
+      await chat.save();
+
+      console.log('✅ Arcade chat created:', { 
+        chatId: chat._id, 
+        chatType: chat.chatType, 
+        matchId: chat.matchId 
+      });
 
       res.json({
         success: true,
@@ -243,13 +262,19 @@ router.post(
       if (!chat) {
         chat = new Chat({
           participants: users,
-          matchId: new mongoose.Types.ObjectId(),
+          chatType: "trees", // Mark as regular Trees chat
         });
         chat.generatePin();
         if (perm.requiresApproval) chat.isApproved = false;
         else chat.isApproved = true;
         await chat.save();
+        
+        console.log('✅ Trees chat created:', { 
+          chatId: chat._id, 
+          chatType: chat.chatType 
+        });
       }
+      
       const populated = await Chat.findById(chat._id)
         .populate(
           "participants",

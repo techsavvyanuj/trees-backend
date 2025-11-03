@@ -5,6 +5,7 @@ import User from "../models/User.js";
 import OTP from "../models/OTP.js";
 import { protect as authenticate } from "../middleware/auth.js";
 import UserInteraction from "../models/UserInteraction.js";
+import { sendOTPEmail } from "../services/emailService.js";
 
 const router = express.Router();
 
@@ -466,14 +467,11 @@ router.post("/send-otp", async (req, res) => {
       userAgent: req.get("User-Agent"),
     });
 
-    // Here you would integrate with your SMS/Email service
-    // For demo purposes, we'll log the OTP
-    console.log(`OTP for ${identifier}: ${otp.code}`);
-
-    // In production, send via SMS/Email service
+    // Send OTP via email or SMS
     if (type === "email") {
-      await sendEmailOTP(identifier, otp.code, purpose);
+      await sendOTPEmail(identifier, otp.code, purpose);
     } else {
+      // SMS sending would go here (Twilio, AWS SNS, etc.)
       await sendSMSOTP(identifier, otp.code, purpose);
     }
 
@@ -737,16 +735,11 @@ function maskIdentifier(identifier, type) {
   }
 }
 
-async function sendEmailOTP(email, code, purpose) {
-  // Integrate with your email service (SendGrid, AWS SES, etc.)
-  console.log(`Sending email OTP to ${email}: ${code} for ${purpose}`);
-  // Implementation depends on your email service
-}
-
 async function sendSMSOTP(phone, code, purpose) {
   // Integrate with your SMS service (Twilio, AWS SNS, etc.)
-  console.log(`Sending SMS OTP to ${phone}: ${code} for ${purpose}`);
-  // Implementation depends on your SMS service
+  console.log(`📱 SMS OTP to ${phone}: ${code} for ${purpose}`);
+  // TODO: Implement SMS service integration
+  // Example: await twilioClient.messages.create({ to: phone, body: `Your Trees Social code is: ${code}` });
 }
 
 // Get current user profile

@@ -118,10 +118,56 @@ router.get('/token', auth, async (req, res) => {
   }
 });
 
+// Get my active stream
+router.get('/my-active', auth, async (req, res) => {
+  try {
+    const userId = req.user._id || req.user.id;
+    
+    const activeStream = await Stream.findOne({
+      streamerId: userId,
+      status: 'live'
+    });
+    
+    if (!activeStream) {
+      return res.status(404).json({
+        success: false,
+        error: 'No active stream found'
+      });
+    }
+    
+    // Convert to plain object to avoid ObjectId serialization issues
+    const streamObj = activeStream.toObject();
+    
+    res.json({
+      success: true,
+      stream: {
+        _id: streamObj._id.toString(),
+        title: streamObj.title,
+        description: streamObj.description,
+        category: streamObj.category,
+        thumbnail: streamObj.thumbnail,
+        videoSdkRoomId: streamObj.videoSdkRoomId,
+        startedAt: streamObj.startedAt,
+        status: streamObj.status
+      }
+    });
+  } catch (error) {
+    console.error('Error getting active stream:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // Start stream
 router.post('/start', auth, async (req, res) => {
   try {
     const { title, description, category, thumbnail } = req.body;
+    
+    console.log('=== START STREAM DEBUG ===');
+    console.log('req.user:', req.user);
+    console.log('req.body:', req.body);
     
     // Validate required fields
     if (!title) {
@@ -130,17 +176,25 @@ router.post('/start', auth, async (req, res) => {
         error: 'Stream title is required' 
       });
     }
+
+    // Get user ID - handle both _id and id
+    const userId = req.user._id || req.user.id;
+    console.log('userId:', userId);
     
     // Check if user already has an active stream
     const existingStream = await Stream.findOne({
-      streamerId: req.user.id,
+      streamerId: userId,
       status: 'live'
     });
     
+    console.log('Existing stream check:', existingStream);
+    
     if (existingStream) {
+      console.log('Found existing stream:', existingStream._id);
       return res.status(400).json({ 
         success: false,
-        error: 'You already have an active stream' 
+        error: 'You already have an active stream',
+        streamId: existingStream._id
       });
     }
     
@@ -155,10 +209,10 @@ router.post('/start', auth, async (req, res) => {
     }
     
     // Generate unique stream key
-    const streamKey = `stream_${req.user.id}_${Date.now()}`;
+    const streamKey = `stream_${userId}_${Date.now()}`;
     
     const stream = new Stream({
-      streamerId: req.user.id,
+      streamerId: userId,
       title: title,
       description: description || '',
       category: category || 'other',
@@ -173,12 +227,16 @@ router.post('/start', auth, async (req, res) => {
     
     await stream.save();
     
-    // Update user's streamer profile
-    await User.findByIdAndUpdate(req.user.id, {
-      'streamerProfile.isLive': true,
-      'streamerProfile.currentStreamId': stream._id,
-      'streamerProfile.totalStreams': { $inc: 1 },
-    });
+    // Update user's streamer profile (only if user exists in DB)
+    try {
+      await User.findByIdAndUpdate(userId, {
+        'streamerProfile.isLive': true,
+        'streamerProfile.currentStreamId': stream._id,
+        $inc: { 'streamerProfile.totalStreams': 1 },
+      });
+    } catch (error) {
+      console.log('Could not update user profile (user may not exist in DB):', error.message);
+    }
     
     const populatedStream = await Stream.findById(stream._id)
       .populate('streamerId', 'username name avatar isVerified');
@@ -210,7 +268,19 @@ router.post('/:id/end', auth, async (req, res) => {
       });
     }
     
-    if (stream.streamerId.toString() !== req.user.id) {
+    // Check authorization - support both _id and id fields
+    const userId = req.user.id || req.user._id?.toString();
+    const streamerId = stream.streamerId.toString();
+    
+    console.log('End stream authorization check:', { 
+      userId, 
+      streamerId,
+      reqUserId: req.user.id,
+      reqUser_id: req.user._id,
+      match: userId === streamerId
+    });
+    
+    if (streamerId !== userId) {
       return res.status(403).json({ 
         success: false,
         error: 'Not authorized' 

@@ -2,6 +2,12 @@ import mongoose from "mongoose";
 
 const chatSchema = new mongoose.Schema(
   {
+    chatType: {
+      type: String,
+      enum: ["arcade", "trees"],
+      default: "trees",
+      required: true,
+    },
     matchId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Match",
