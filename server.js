@@ -50,6 +50,7 @@ const io = new Server(server, {
       "https://treessocialmedia-ci5o.vercel.app",
       "https://treessocialmedia.vercel.app",
       "https://trees-admin-lh9z.vercel.app",
+      "https://trees-admin.vercel.app",
       "https://inventurcubes.com",
       "https://www.inventurcubes.com",
       "http://localhost:5173",
@@ -62,6 +63,7 @@ const io = new Server(server, {
       process.env.FRONTEND_URL,
     ].filter(Boolean),
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    credentials: true,
   },
 });
 
@@ -86,6 +88,7 @@ const corsOptions = {
     "https://treessocialmedia-ci5o.vercel.app",
     "https://treessocialmedia-ci5o.vercel.app/",
     "https://trees-admin-lh9z.vercel.app",
+    "https://trees-admin.vercel.app",
     "https://inventurcubes.com",
     "https://www.inventurcubes.com",
     "http://localhost:5173",
