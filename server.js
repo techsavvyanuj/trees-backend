@@ -40,6 +40,10 @@ dotenv.config();
 
 const app = express();
 const server = createServer(app);
+
+// Trust proxy - Required when behind Nginx
+app.set('trust proxy', 1);
+
 const io = new Server(server, {
   cors: {
     origin: [
@@ -68,6 +72,12 @@ const limiter = rateLimit({
   message: { error: "Too many requests from this IP, please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
+  // Trust proxy to get real IP address
+  trustProxy: true,
+  // Skip failed requests (don't count them)
+  skipFailedRequests: true,
+  // Skip successful requests (only count bad requests)
+  skipSuccessfulRequests: false,
 });
 
 // Middleware (CORS MUST COME FIRST)

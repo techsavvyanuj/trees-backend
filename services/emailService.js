@@ -3,8 +3,18 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Initialize SendGrid
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+// Initialize SendGrid with validation
+const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY?.trim();
+
+if (!SENDGRID_API_KEY) {
+  console.error('❌ SENDGRID_API_KEY is not set in environment variables');
+} else if (!SENDGRID_API_KEY.startsWith('SG.')) {
+  console.error('❌ SENDGRID_API_KEY format is invalid. It should start with "SG."');
+  console.error('Current key starts with:', SENDGRID_API_KEY.substring(0, 10));
+} else {
+  sgMail.setApiKey(SENDGRID_API_KEY);
+  console.log('✅ SendGrid initialized with API key');
+}
 
 const FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL || 'noreply@treessocial.com';
 const FROM_NAME = process.env.SENDGRID_FROM_NAME || 'Trees Social';
@@ -17,6 +27,10 @@ const FROM_NAME = process.env.SENDGRID_FROM_NAME || 'Trees Social';
  */
 export const sendOTPEmail = async (to, code, purpose) => {
   try {
+    if (!SENDGRID_API_KEY || !SENDGRID_API_KEY.startsWith('SG.')) {
+      throw new Error('SendGrid is not properly configured');
+    }
+
     const { subject, html } = getOTPEmailTemplate(code, purpose);
 
     const msg = {
