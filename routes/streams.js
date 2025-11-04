@@ -71,33 +71,6 @@ router.get('/leaderboard', auth, async (req, res) => {
   }
 });
 
-// Get stream by ID
-router.get('/:id', auth, async (req, res) => {
-  try {
-    const stream = await Stream.findById(req.params.id)
-      .populate('streamer', 'username profileImage isVerified')
-      .populate('chat.user', 'username profileImage');
-    
-    if (!stream) {
-      return res.status(404).json({ error: 'Stream not found' });
-    }
-    
-    // Add viewer if not already viewing
-    if (!stream.viewers.includes(req.user.id)) {
-      stream.viewers.push(req.user.id);
-      stream.totalViews += 1;
-      if (stream.viewers.length > stream.maxViewers) {
-        stream.maxViewers = stream.viewers.length;
-      }
-      await stream.save();
-    }
-    
-    res.json(stream);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
 // Generate VideoSDK token
 router.get('/token', auth, async (req, res) => {
   try {
@@ -157,6 +130,33 @@ router.get('/my-active', auth, async (req, res) => {
       success: false,
       error: error.message
     });
+  }
+});
+
+// Get stream by ID - MUST come after specific routes like /my-active, /token
+router.get('/:id', auth, async (req, res) => {
+  try {
+    const stream = await Stream.findById(req.params.id)
+      .populate('streamer', 'username profileImage isVerified')
+      .populate('chat.user', 'username profileImage');
+    
+    if (!stream) {
+      return res.status(404).json({ error: 'Stream not found' });
+    }
+    
+    // Add viewer if not already viewing
+    if (!stream.viewers.includes(req.user.id)) {
+      stream.viewers.push(req.user.id);
+      stream.totalViews += 1;
+      if (stream.viewers.length > stream.maxViewers) {
+        stream.maxViewers = stream.viewers.length;
+      }
+      await stream.save();
+    }
+    
+    res.json(stream);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
