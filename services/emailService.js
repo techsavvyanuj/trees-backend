@@ -1,23 +1,39 @@
-import sgMail from '@sendgrid/mail';
+import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Initialize SendGrid with validation
-const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY?.trim();
+// Create transporter with Gmail SMTP
+let transporter;
 
-if (!SENDGRID_API_KEY) {
-  console.error('❌ SENDGRID_API_KEY is not set in environment variables');
-} else if (!SENDGRID_API_KEY.startsWith('SG.')) {
-  console.error('❌ SENDGRID_API_KEY format is invalid. It should start with "SG."');
-  console.error('Current key starts with:', SENDGRID_API_KEY.substring(0, 10));
-} else {
-  sgMail.setApiKey(SENDGRID_API_KEY);
-  console.log('✅ SendGrid initialized with API key');
+try {
+  transporter = nodemailer.createTransport({
+    host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+    port: parseInt(process.env.EMAIL_PORT) || 587,
+    secure: false, // true for 465, false for other ports
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS, // Use App Password for Gmail
+    },
+    tls: {
+      rejectUnauthorized: false
+    }
+  });
+
+  // Verify transporter configuration
+  transporter.verify(function (error, success) {
+    if (error) {
+      console.error('❌ Email transporter error:', error.message);
+    } else {
+      console.log('✅ Email server is ready to send messages');
+    }
+  });
+} catch (error) {
+  console.error('❌ Failed to create email transporter:', error.message);
 }
 
-const FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL || 'noreply@treessocial.com';
-const FROM_NAME = process.env.SENDGRID_FROM_NAME || 'Trees Social';
+const FROM_EMAIL = process.env.EMAIL_USER || 'noreply@inventurcubes.com';
+const FROM_NAME = 'Treesh Social';
 
 /**
  * Send OTP email
@@ -27,27 +43,25 @@ const FROM_NAME = process.env.SENDGRID_FROM_NAME || 'Trees Social';
  */
 export const sendOTPEmail = async (to, code, purpose) => {
   try {
-    if (!SENDGRID_API_KEY || !SENDGRID_API_KEY.startsWith('SG.')) {
-      throw new Error('SendGrid is not properly configured');
+    if (!transporter) {
+      throw new Error('Email service is not configured');
     }
 
     const { subject, html } = getOTPEmailTemplate(code, purpose);
 
-    const msg = {
-      to,
-      from: {
-        email: FROM_EMAIL,
-        name: FROM_NAME,
-      },
-      subject,
-      html,
+    const mailOptions = {
+      from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
+      to: to,
+      subject: subject,
+      html: html,
     };
 
-    await sgMail.send(msg);
+    const info = await transporter.sendMail(mailOptions);
     console.log(`✅ OTP email sent to ${to} for ${purpose}`);
+    console.log('Message ID:', info.messageId);
     return { success: true };
   } catch (error) {
-    console.error('❌ SendGrid Error:', error.response?.body || error.message);
+    console.error('❌ Email sending error:', error.message);
     throw new Error('Failed to send email');
   }
 };
